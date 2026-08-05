@@ -1,0 +1,38 @@
+name: chores
+description: "A chore-tracking app shared between two people."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^4.13.0
+  firebase_auth: ^6.5.7
+  cloud_firestore: ^6.8.0
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^8.2.1
+  intl: ^0.20.3
+
+  # Local persistence (for timer survival across app kills)
+  shared_preferences: ^2.5.5
+
+  # Utilities
+  uuid: ^4.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
