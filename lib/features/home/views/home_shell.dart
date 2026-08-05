@@ -5,7 +5,6 @@ import 'package:chores/app/theme.dart';
 import 'package:chores/providers/providers.dart';
 import 'package:chores/features/chores/views/chores_page.dart';
 import 'package:chores/features/schedule/views/schedule_page.dart';
-import 'package:chores/features/timer/views/timer_page.dart';
 import 'package:chores/features/history/views/history_page.dart';
 
 /// Bottom-navigation shell after onboarding.
@@ -22,7 +21,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   final _pages = const [
     ChoresPage(),
     SchedulePage(),
-    TimerPage(),
     HistoryPage(),
   ];
 
@@ -70,11 +68,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               label: 'Schedule',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.timer_outlined),
-              activeIcon: Icon(Icons.timer),
-              label: 'Timer',
-            ),
-            BottomNavigationBarItem(
               icon: Icon(Icons.history_outlined),
               activeIcon: Icon(Icons.history),
               label: 'History',
@@ -85,3 +78,4 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     );
   }
 }
+

@@ -73,6 +73,8 @@ class SchedulePage extends ConsumerWidget {
 
     final choreMap = {for (final c in chores) c.id: c};
     final memberMap = {for (final m in members) m.id: m};
+    final timerState = ref.watch(scheduleTimerProvider);
+    final timerNotifier = ref.read(scheduleTimerProvider.notifier);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 80),
@@ -160,6 +162,19 @@ class SchedulePage extends ConsumerWidget {
                   if (chore == null) return const SizedBox.shrink();
                   final color = ChoreColors.fromHex(chore.color);
 
+                  final itemKey = '${sched.id}_$day';
+                  final isActive = timerState.activeKey == itemKey;
+                  final isRunning = isActive && timerState.isRunning;
+                  final isPaused = isActive && timerState.isPaused;
+                  final elapsedSeconds =
+                      timerState.getElapsedSecondsFor(itemKey);
+
+                  final cardBorderColor = isActive
+                      ? color
+                      : elapsedSeconds > 0
+                          ? color.withAlpha(140)
+                          : color.withAlpha(60);
+
                   return Dismissible(
                     key: ValueKey(sched.id + day.toString()),
                     direction: DismissDirection.endToStart,
@@ -185,71 +200,218 @@ class SchedulePage extends ConsumerWidget {
                     },
                     child: GlassCard(
                       margin: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      borderColor: color.withAlpha(60),
+                          horizontal: 16, vertical: 5),
+                      padding: const EdgeInsets.all(14),
+                      borderColor: cardBorderColor,
                       onTap: () {
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          builder: (_) =>
-                              ScheduleFormSheet(schedule: sched),
-                        );
+                        if (isActive && isRunning) {
+                          timerNotifier.pause();
+                        } else {
+                          timerNotifier.startOrResume(
+                            scheduleId: sched.id,
+                            day: day,
+                            choreId: chore.id,
+                            personId: sched.personId,
+                          );
+                        }
                       },
-                      child: Row(
+                      child: Column(
                         children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: color.withAlpha(40),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              ChoreIcons.fromKey(chore.icon),
-                              color: color,
-                              size: 18,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  chore.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
+                          Row(
+                            children: [
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                  color: color.withAlpha(isActive ? 60 : 35),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                if (member != null)
-                                  Text(
-                                    member.displayName,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
+                                child: Icon(
+                                  ChoreIcons.fromKey(chore.icon),
+                                  color: color,
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          chore.name,
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: isActive
+                                                ? color
+                                                : AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        if (sched.recurring) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  AppColors.accent.withAlpha(30),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: const Text(
+                                              '↻',
+                                              style: TextStyle(
+                                                  color: AppColors.accent,
+                                                  fontSize: 11),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                  ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        if (member != null) ...[
+                                          Text(
+                                            member.displayName,
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                color: AppColors.textSecondary),
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        Text(
+                                          isRunning
+                                              ? '• Running...'
+                                              : isPaused
+                                                  ? '• Paused'
+                                                  : elapsedSeconds > 0
+                                                      ? '• Stopped (Tap to resume)'
+                                                      : '• Tap to start',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: isRunning
+                                                ? AppColors.primary
+                                                : isPaused
+                                                    ? AppColors.accent
+                                                    : AppColors.textHint,
+                                            fontWeight: isActive
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined,
+                                    size: 18, color: AppColors.textHint),
+                                onPressed: () => _openScheduleForm(context,
+                                    schedule: sched),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ],
+                          ),
+                          if (isActive || elapsedSeconds > 0) ...[
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: AppColors.divider),
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      isRunning
+                                          ? Icons.timer
+                                          : Icons.timer_outlined,
+                                      size: 16,
+                                      color: isActive
+                                          ? color
+                                          : AppColors.textSecondary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _formatTimerDuration(elapsedSeconds),
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: isActive
+                                            ? color
+                                            : AppColors.textPrimary,
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures()
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Row(
+                                  children: [
+                                    if (isActive) ...[
+                                      IconButton(
+                                        icon: Icon(
+                                          isRunning
+                                              ? Icons.pause_circle_filled
+                                              : Icons.play_circle_filled,
+                                          color: color,
+                                          size: 28,
+                                        ),
+                                        tooltip: isRunning
+                                            ? 'Pause Timer'
+                                            : 'Resume Timer',
+                                        onPressed: () {
+                                          if (isRunning) {
+                                            timerNotifier.pause();
+                                          } else {
+                                            timerNotifier.startOrResume(
+                                              scheduleId: sched.id,
+                                              day: day,
+                                              choreId: chore.id,
+                                              personId: sched.personId,
+                                            );
+                                          }
+                                        },
+                                      ),
+                                      const SizedBox(width: 4),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.stop_circle_rounded,
+                                          color: AppColors.error,
+                                          size: 28,
+                                        ),
+                                        tooltip: 'Stop & Complete',
+                                        onPressed: () => timerNotifier.stop(),
+                                      ),
+                                    ] else ...[
+                                      TextButton.icon(
+                                        onPressed: () {
+                                          timerNotifier.startOrResume(
+                                            scheduleId: sched.id,
+                                            day: day,
+                                            choreId: chore.id,
+                                            personId: sched.personId,
+                                          );
+                                        },
+                                        icon: Icon(Icons.play_arrow_rounded,
+                                            color: color, size: 20),
+                                        label: Text(
+                                          'Resume',
+                                          style: TextStyle(
+                                              color: color,
+                                              fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ],
                             ),
-                          ),
-                          if (sched.recurring)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.accent.withAlpha(30),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Text(
-                                '↻',
-                                style: TextStyle(
-                                    color: AppColors.accent, fontSize: 14),
-                              ),
-                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -263,6 +425,19 @@ class SchedulePage extends ConsumerWidget {
     );
   }
 
+  String _formatTimerDuration(int totalSeconds) {
+    final hours = totalSeconds ~/ 3600;
+    final minutes = (totalSeconds % 3600) ~/ 60;
+    final seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:'
+          '${minutes.toString().padLeft(2, '0')}:'
+          '${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')}';
+  }
+
   void _openScheduleForm(BuildContext context, {ChoreSchedule? schedule}) {
     showModalBottomSheet(
       context: context,
@@ -272,3 +447,4 @@ class SchedulePage extends ConsumerWidget {
     );
   }
 }
+
