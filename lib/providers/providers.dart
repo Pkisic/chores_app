@@ -130,6 +130,18 @@ const _kScheduleTimerAccumulatedSecs = 'sched_timer_accumulated_secs';
 const _kScheduleTimerIsPaused = 'sched_timer_is_paused';
 const _kScheduleTimerActiveLogId = 'sched_timer_active_log_id';
 const _kScheduleTimerElapsedMap = 'sched_timer_elapsed_map';
+const _kScheduleTimerPersonMap = 'sched_timer_person_map';
+const _kScheduleTimerWeekId = 'sched_timer_week_id';
+
+String getIsoWeekId(DateTime date) {
+  final thursday = date.add(Duration(days: 3 - ((date.weekday + 6) % 7)));
+  final firstThursday = DateTime(thursday.year, 1, 4);
+  final firstThursdayCorrected =
+      firstThursday.add(Duration(days: 3 - ((firstThursday.weekday + 6) % 7)));
+  final weekNumber =
+      1 + (thursday.difference(firstThursdayCorrected).inDays / 7).floor();
+  return '${thursday.year}-W${weekNumber.toString().padLeft(2, '0')}';
+}
 
 class ScheduleTimerState {
   final String? activeKey; // e.g. "${schedId}_$day"
@@ -142,6 +154,8 @@ class ScheduleTimerState {
   final bool isPaused;
   final String? activeLogId;
   final Map<String, int> itemElapsedSeconds;
+  final Map<String, String> itemPersonMap;
+  final String currentWeekId;
 
   const ScheduleTimerState({
     this.activeKey,
@@ -154,6 +168,8 @@ class ScheduleTimerState {
     this.isPaused = false,
     this.activeLogId,
     this.itemElapsedSeconds = const {},
+    this.itemPersonMap = const {},
+    required this.currentWeekId,
   });
 
   ScheduleTimerState copyWith({
@@ -167,6 +183,8 @@ class ScheduleTimerState {
     bool? isPaused,
     String? activeLogId,
     Map<String, int>? itemElapsedSeconds,
+    Map<String, String>? itemPersonMap,
+    String? currentWeekId,
     bool clearActiveKey = false,
   }) {
     return ScheduleTimerState(
@@ -183,6 +201,8 @@ class ScheduleTimerState {
       isPaused: clearActiveKey ? false : (isPaused ?? this.isPaused),
       activeLogId: clearActiveKey ? null : (activeLogId ?? this.activeLogId),
       itemElapsedSeconds: itemElapsedSeconds ?? this.itemElapsedSeconds,
+      itemPersonMap: itemPersonMap ?? this.itemPersonMap,
+      currentWeekId: currentWeekId ?? this.currentWeekId,
     );
   }
 
@@ -208,6 +228,29 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
     });
 
     final prefs = ref.read(sharedPrefsProvider);
+    final now = DateTime.now();
+    final weekId = getIsoWeekId(now);
+
+    final storedWeekId = prefs.getString(_kScheduleTimerWeekId);
+    // Weekly Reset: if stored week is different from current week, reset all timers!
+    if (storedWeekId != null && storedWeekId != weekId) {
+      prefs.remove(_kScheduleTimerActiveKey);
+      prefs.remove(_kScheduleTimerActiveChoreId);
+      prefs.remove(_kScheduleTimerActiveSchedId);
+      prefs.remove(_kScheduleTimerActiveDay);
+      prefs.remove(_kScheduleTimerStartedAtMs);
+      prefs.remove(_kScheduleTimerAccumulatedSecs);
+      prefs.remove(_kScheduleTimerIsPaused);
+      prefs.remove(_kScheduleTimerActiveLogId);
+      prefs.remove(_kScheduleTimerElapsedMap);
+      prefs.remove(_kScheduleTimerPersonMap);
+      prefs.setString(_kScheduleTimerWeekId, weekId);
+
+      return ScheduleTimerState(currentWeekId: weekId);
+    } else {
+      prefs.setString(_kScheduleTimerWeekId, weekId);
+    }
+
     final activeKey = prefs.getString(_kScheduleTimerActiveKey);
     final choreId = prefs.getString(_kScheduleTimerActiveChoreId);
     final schedId = prefs.getString(_kScheduleTimerActiveSchedId);
@@ -226,6 +269,15 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
       } catch (_) {}
     }
 
+    Map<String, String> personMap = {};
+    final personJson = prefs.getString(_kScheduleTimerPersonMap);
+    if (personJson != null) {
+      try {
+        final decoded = jsonDecode(personJson) as Map<String, dynamic>;
+        personMap = decoded.map((k, v) => MapEntry(k, v.toString()));
+      } catch (_) {}
+    }
+
     if (activeKey != null && startedAtMs != null && !isPaused) {
       final startedAt = DateTime.fromMillisecondsSinceEpoch(startedAtMs);
       final initialState = ScheduleTimerState(
@@ -239,6 +291,8 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
         isPaused: false,
         activeLogId: activeLogId,
         itemElapsedSeconds: elapsedMap,
+        itemPersonMap: personMap,
+        currentWeekId: weekId,
       );
       _startTicker();
       return initialState;
@@ -254,10 +308,16 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
         isPaused: true,
         activeLogId: activeLogId,
         itemElapsedSeconds: elapsedMap,
+        itemPersonMap: personMap,
+        currentWeekId: weekId,
       );
     }
 
-    return ScheduleTimerState(itemElapsedSeconds: elapsedMap);
+    return ScheduleTimerState(
+      itemElapsedSeconds: elapsedMap,
+      itemPersonMap: personMap,
+      currentWeekId: weekId,
+    );
   }
 
   void _startTicker() {
@@ -282,6 +342,9 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
       await pause();
     }
 
+    final updatedPersonMap = Map<String, String>.from(state.itemPersonMap);
+    updatedPersonMap[key] = personId;
+
     // If resuming current paused timer
     if (state.activeKey == key && state.isPaused) {
       final now = DateTime.now();
@@ -289,6 +352,7 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
         startedAt: now,
         isRunning: true,
         isPaused: false,
+        itemPersonMap: updatedPersonMap,
       );
       _startTicker();
       await _persistActiveState();
@@ -324,10 +388,55 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
       isRunning: true,
       isPaused: false,
       activeLogId: logId,
+      itemPersonMap: updatedPersonMap,
     );
 
     _startTicker();
     await _persistActiveState();
+  }
+
+  Future<void> addCustomTime({
+    required String scheduleId,
+    required int day,
+    required String choreId,
+    required String personId,
+    required int minutes,
+  }) async {
+    final key = '${scheduleId}_$day';
+    final additionalSeconds = minutes * 60;
+    final currentElapsed = state.getElapsedSecondsFor(key);
+    final newTotal = currentElapsed + additionalSeconds;
+
+    final updatedMap = Map<String, int>.from(state.itemElapsedSeconds);
+    updatedMap[key] = newTotal;
+
+    final updatedPersonMap = Map<String, String>.from(state.itemPersonMap);
+    updatedPersonMap[key] = personId;
+
+    // Log to Firestore for history
+    final hid = ref.read(householdIdProvider);
+    if (hid != null) {
+      final log = await ref
+          .read(timeLogRepoProvider)
+          .startTimer(hid, choreId, personId);
+      await ref.read(timeLogRepoProvider).stopTimer(hid, log.id);
+    }
+
+    if (state.activeKey == key) {
+      state = state.copyWith(
+        accumulatedSeconds: state.accumulatedSeconds + additionalSeconds,
+        itemElapsedSeconds: updatedMap,
+        itemPersonMap: updatedPersonMap,
+      );
+    } else {
+      state = state.copyWith(
+        itemElapsedSeconds: updatedMap,
+        itemPersonMap: updatedPersonMap,
+      );
+    }
+
+    await _persistElapsedMap(updatedMap);
+    await _persistPersonMap(updatedPersonMap);
   }
 
   Future<void> pause() async {
@@ -371,6 +480,8 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
 
     state = ScheduleTimerState(
       itemElapsedSeconds: updatedMap,
+      itemPersonMap: state.itemPersonMap,
+      currentWeekId: state.currentWeekId,
     );
 
     await _clearActiveStateFromPrefs();
@@ -403,6 +514,7 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
       }
     }
     await _persistElapsedMap(state.itemElapsedSeconds);
+    await _persistPersonMap(state.itemPersonMap);
   }
 
   Future<void> _clearActiveStateFromPrefs() async {
@@ -421,9 +533,15 @@ class ScheduleTimerNotifier extends Notifier<ScheduleTimerState> {
     final prefs = ref.read(sharedPrefsProvider);
     await prefs.setString(_kScheduleTimerElapsedMap, jsonEncode(map));
   }
+
+  Future<void> _persistPersonMap(Map<String, String> map) async {
+    final prefs = ref.read(sharedPrefsProvider);
+    await prefs.setString(_kScheduleTimerPersonMap, jsonEncode(map));
+  }
 }
 
 final scheduleTimerProvider =
     NotifierProvider<ScheduleTimerNotifier, ScheduleTimerState>(
         ScheduleTimerNotifier.new);
+
 
