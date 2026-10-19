@@ -6,6 +6,7 @@ import 'package:chores/providers/providers.dart';
 import 'package:chores/features/chores/views/chores_page.dart';
 import 'package:chores/features/schedule/views/schedule_page.dart';
 import 'package:chores/features/history/views/history_page.dart';
+import 'package:chores/features/schedule/state/week_providers.dart';
 
 /// Bottom-navigation shell after onboarding.
 class HomeShell extends ConsumerStatefulWidget {
@@ -15,8 +16,29 @@ class HomeShell extends ConsumerStatefulWidget {
   ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends ConsumerState<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Timers don't fire while suspended; catch a week rollover on resume.
+    if (state == AppLifecycleState.resumed) {
+      ref.read(currentWeekIdProvider.notifier).refresh();
+    }
+  }
 
   final _pages = const [
     ChoresPage(),
