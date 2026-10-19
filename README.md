@@ -137,6 +137,37 @@ You can test real-time synchronization between two devices/emulators:
 
 ---
 
+## ⚙️ CI/CD (GitHub Actions)
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `ci.yml` | every PR, push to `main` | `flutter analyze` + `flutter test`; on PRs also builds a debug APK (downloadable from the run's **Artifacts**) |
+| `deploy.yml` | push to `main`, manual | builds the web app and deploys it to **https://chores-913d9.web.app**; deploys `firestore.rules` when it changed |
+| `release.yml` | tag `v*` (e.g. `git tag v1.0.0 && git push origin v1.0.0`) | builds a release APK and publishes it as a GitHub Release |
+
+**Secrets.** The gitignored Firebase client config is restored in CI from two
+repository secrets, `FIREBASE_OPTIONS_DART` and `GOOGLE_SERVICES_JSON`
+(base64 of `lib/firebase_options.dart` and `android/app/google-services.json`).
+To update them:
+
+```bash
+base64 -w0 lib/firebase_options.dart | gh secret set FIREBASE_OPTIONS_DART
+base64 -w0 android/app/google-services.json | gh secret set GOOGLE_SERVICES_JSON
+```
+
+**Keyless deploys.** `deploy.yml` authenticates to Google Cloud with
+Workload Identity Federation: GitHub's short-lived OIDC token is exchanged
+for Google credentials. No service-account key exists anywhere. The
+identity provider (`github/chores-app`) only trusts `Pkisic/chores_app` on
+`refs/heads/main`. It impersonates `github-deployer@chores-913d9.iam.gserviceaccount.com`,
+which only has Hosting, Rules, Service Usage Consumer and Firebase Viewer
+roles.
+
+Everything runs on free tiers: public-repo GitHub Actions and the Firebase
+Spark plan (billing disabled, so nothing can be charged).
+
+---
+
 ## 🛡️ Firestore Security Rules (Recommended)
 
 ```javascript

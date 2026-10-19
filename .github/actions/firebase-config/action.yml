@@ -1,0 +1,27 @@
+name: Write Firebase config
+description: >
+  Restores the gitignored Firebase client config (lib/firebase_options.dart,
+  android/app/google-services.json) from base64-encoded repository secrets.
+
+inputs:
+  firebase-options-dart:
+    description: base64 of lib/firebase_options.dart
+    required: true
+  google-services-json:
+    description: base64 of android/app/google-services.json
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        FIREBASE_OPTIONS_DART: ${{ inputs.firebase-options-dart }}
+        GOOGLE_SERVICES_JSON: ${{ inputs.google-services-json }}
+      run: |
+        if [ -z "$FIREBASE_OPTIONS_DART" ] || [ -z "$GOOGLE_SERVICES_JSON" ]; then
+          echo "::error::Missing FIREBASE_OPTIONS_DART / GOOGLE_SERVICES_JSON secrets"
+          exit 1
+        fi
+        echo "$FIREBASE_OPTIONS_DART" | base64 --decode > lib/firebase_options.dart
+        echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json

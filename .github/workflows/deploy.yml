@@ -1,0 +1,94 @@
+name: Deploy
+
+# Keyless: GitHub's OIDC token is exchanged for short-lived Google credentials
+# through Workload Identity Federation. No service-account key exists.
+# The provider only trusts Pkisic/chores_app on refs/heads/main.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  FLUTTER_VERSION: '3.44.0'
+  FIREBASE_PROJECT: chores-913d9
+  WIF_PROVIDER: projects/391910975994/locations/global/workloadIdentityPools/github/providers/chores-app
+  DEPLOY_SERVICE_ACCOUNT: github-deployer@chores-913d9.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    name: Web + Firestore rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/firebase-config
+        with:
+          firebase-options-dart: ${{ secrets.FIREBASE_OPTIONS_DART }}
+          google-services-json: ${{ secrets.GOOGLE_SERVICES_JSON }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter test
+      - run: flutter build web --release
+
+      # Rules deploy only when firestore.rules changed in this push (or on a
+      # manual run), so unrelated merges never touch production rules.
+      - name: Decide what to deploy
+        id: targets
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          targets="hosting"
+          if [ -f firestore.rules ]; then
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] \
+              || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
+              || ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- firestore.rules; then
+              targets="$targets,firestore:rules"
+            fi
+          fi
+          echo "only=$targets" >> "$GITHUB_OUTPUT"
+          echo "Deploying: $targets"
+
+      # firebase.json is gitignored locally (it holds app IDs), so CI writes
+      # the minimal deploy config it needs.
+      - name: Write firebase.json
+        run: |
+          cat > firebase.json <<'JSON'
+          {
+            "hosting": {
+              "public": "build/web",
+              "ignore": ["firebase.json", "**/.*"],
+              "rewrites": [{ "source": "**", "destination": "/index.html" }]
+            },
+            "firestore": { "rules": "firestore.rules" }
+          }
+          JSON
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Firebase
+        run: >
+          npx --yes firebase-tools@15.28.1 deploy
+          --only "${{ steps.targets.outputs.only }}"
+          --project "$FIREBASE_PROJECT"
+          --non-interactive
