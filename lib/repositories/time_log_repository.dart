@@ -55,16 +55,43 @@ class TimeLogRepository {
   }
 
   // ── Stop timer ─────────────────────────────────────────────
-  Future<void> stopTimer(String householdId, String logId) async {
+  Future<void> stopTimer(
+    String householdId,
+    String logId, {
+    int? customDurationSeconds,
+  }) async {
     final now = Timestamp.now();
     final docRef = _logsCol(householdId).doc(logId);
     final snap = await docRef.get();
     if (!snap.exists) return;
 
     final startedAt = (snap.data()!['started_at'] as Timestamp).toDate();
-    final duration = now.toDate().difference(startedAt).inSeconds;
+    final duration = customDurationSeconds ??
+        now.toDate().difference(startedAt).inSeconds;
 
     await docRef.update({'ended_at': now, 'duration_seconds': duration});
+  }
+
+  // ── Log completed manual/custom duration time ─────────────
+  Future<TimeLog> logCustomTime(
+    String householdId,
+    String choreId,
+    String personId,
+    int durationSeconds,
+  ) async {
+    final doc = _logsCol(householdId).doc();
+    final now = DateTime.now();
+    final startedAt = now.subtract(Duration(seconds: durationSeconds));
+    final log = TimeLog(
+      id: doc.id,
+      choreId: choreId,
+      personId: personId,
+      startedAt: Timestamp.fromDate(startedAt),
+      endedAt: Timestamp.fromDate(now),
+      durationSeconds: durationSeconds,
+    );
+    await doc.set(log.toJson());
+    return log;
   }
 
   // ── Get currently running log for a chore/person ──────────
