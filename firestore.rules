@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// Temporary rules: any signed-in user can access any household.
+// TODO: scope to household membership (see roadmap, auth step).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /households/{householdId} {
+      allow read, write: if request.auth != null;
+      match /{allSubcollections=**} {
+        allow read, write: if request.auth != null;
+      }
+    }
+  }
+}

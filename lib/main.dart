@@ -32,6 +32,7 @@ Future<void> main() async {
 
   // Load shared prefs before app starts
   final prefs = await SharedPreferences.getInstance();
+  await _clearLegacyTimerPrefs(prefs);
 
   runApp(
     ProviderScope(
@@ -41,6 +42,15 @@ Future<void> main() async {
       child: const ChoresApp(),
     ),
   );
+}
+
+/// The schedule timer used to keep its state in SharedPreferences under
+/// `sched_timer_*`; it now lives in Firestore.
+Future<void> _clearLegacyTimerPrefs(SharedPreferences prefs) async {
+  final legacy = prefs.getKeys().where((k) => k.startsWith('sched_timer_'));
+  for (final key in legacy.toList()) {
+    await prefs.remove(key);
+  }
 }
 
 class ChoresApp extends ConsumerWidget {

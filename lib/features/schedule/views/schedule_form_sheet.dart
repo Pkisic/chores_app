@@ -4,12 +4,21 @@ import 'package:chores/app/theme.dart';
 import 'package:chores/models/models.dart';
 import 'package:chores/providers/providers.dart';
 import 'package:chores/shared/constants.dart';
+import 'package:chores/shared/week.dart';
+import 'package:chores/features/schedule/views/widgets/week_navigator.dart';
 
 /// Bottom sheet for creating / editing a schedule entry.
 class ScheduleFormSheet extends ConsumerStatefulWidget {
   final ChoreSchedule? schedule;
 
-  const ScheduleFormSheet({super.key, this.schedule});
+  /// Week a new one-off entry goes to by default (the week being viewed).
+  final String initialWeekId;
+
+  const ScheduleFormSheet({
+    super.key,
+    this.schedule,
+    required this.initialWeekId,
+  });
 
   @override
   ConsumerState<ScheduleFormSheet> createState() => _ScheduleFormSheetState();
@@ -20,6 +29,7 @@ class _ScheduleFormSheetState extends ConsumerState<ScheduleFormSheet> {
   String? _selectedPersonId;
   Set<int> _selectedDays = {};
   bool _recurring = true;
+  late String _weekId = widget.initialWeekId;
   bool _saving = false;
 
   bool get _isEditing => widget.schedule != null;
@@ -32,6 +42,7 @@ class _ScheduleFormSheetState extends ConsumerState<ScheduleFormSheet> {
       _selectedPersonId = widget.schedule!.personId;
       _selectedDays = widget.schedule!.days.toSet();
       _recurring = widget.schedule!.recurring;
+      _weekId = widget.schedule!.weekId ?? widget.initialWeekId;
     }
   }
 
@@ -55,6 +66,7 @@ class _ScheduleFormSheetState extends ConsumerState<ScheduleFormSheet> {
       personId: _selectedPersonId!,
       days: _selectedDays.toList()..sort(),
       recurring: _recurring,
+      weekId: _recurring ? null : _weekId,
     );
 
     if (_isEditing) {
@@ -232,24 +244,66 @@ class _ScheduleFormSheetState extends ConsumerState<ScheduleFormSheet> {
             const SizedBox(height: 20),
 
             // ── Recurring toggle ───────────────────────────
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Recurring weekly',
-                    style: TextStyle(color: AppColors.textPrimary)),
-                subtitle: const Text('Repeats every week',
-                    style:
-                        TextStyle(color: AppColors.textHint, fontSize: 12)),
-                value: _recurring,
-                activeThumbColor: AppColors.primary,
-                onChanged: (v) => setState(() => _recurring = v),
+            // ListTile paints on the nearest Material, so the background
+            // must be a Material rather than a decorated Container.
+            Material(
+              color: AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Recurring weekly',
+                      style: TextStyle(color: AppColors.textPrimary)),
+                  subtitle: Text(
+                      _recurring ? 'Repeats every week' : 'Only for one week',
+                      style: const TextStyle(
+                          color: AppColors.textHint, fontSize: 12)),
+                  value: _recurring,
+                  activeThumbColor: AppColors.primary,
+                  onChanged: (v) => setState(() => _recurring = v),
+                ),
               ),
             ),
+
+            // ── Week picker (one-off entries only) ─────────
+            if (!_recurring) ...[
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left,
+                          color: AppColors.textPrimary),
+                      tooltip: 'Previous week',
+                      onPressed: () => setState(
+                          () => _weekId = WeekId.shift(_weekId, -1)),
+                    ),
+                    Expanded(
+                      child: Text(
+                        weekRangeLabel(_weekId),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right,
+                          color: AppColors.textPrimary),
+                      tooltip: 'Next week',
+                      onPressed: () => setState(
+                          () => _weekId = WeekId.shift(_weekId, 1)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
 
             // ── Save button ────────────────────────────────
