@@ -1,0 +1,59 @@
+name: Release
+
+# Push a tag like v1.2.0 to build an APK and publish it as a GitHub Release.
+# The APK is signed with the debug key until real release signing is set up.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.44.0'
+
+jobs:
+  android-apk:
+    name: Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/firebase-config
+        with:
+          firebase-options-dart: ${{ secrets.FIREBASE_OPTIONS_DART }}
+          google-services-json: ${{ secrets.GOOGLE_SERVICES_JSON }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter test
+
+      - name: Build APK
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          flutter build apk --release \
+            --build-name "$version" \
+            --build-number "$GITHUB_RUN_NUMBER"
+          mv build/app/outputs/flutter-apk/app-release.apk "chores-$GITHUB_REF_NAME.apk"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: chores-${{ github.ref_name }}.apk
+          generate_release_notes: true
+          body: |
+            Android APK for testing. Download it on your phone and install it
+            (allow installs from unknown sources). Signed with a debug key, so
+            uninstall any Play Store build first.
